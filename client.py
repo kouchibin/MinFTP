@@ -1,52 +1,56 @@
 import socket
 import sys
-import socketserver
 
 
 class MinFTPClient:
 
-    def __init__(self, server_addr):
-        self.server_addr = server_addr                  # (host, port)
+    def __init__(self, server_addr=('127.0.0.1', 1234)):
+        self.server_addr = server_addr  # (host, port)
         self.cmd_channel = self.initialize_cmd_channel()  # Socket for commands
-        self.file_channel = None                         # Socket for file transfer
+        self.file_channel = None  # Socket for file transfer
 
     def initialize_cmd_channel(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect(self.server_addr)
             print(f'cmd_channel to {self.server_addr} established.')
+            welcome = sock.recv(1024)
+            print(welcome)
             return sock
         except:
             print('Exception occured during establishment of cmd_channel.')
             sys.exit()
 
-    def handle_cmd_channel(self):
-        cmd = input('MinFTP>')
-        instr = cmd.split()[0]
-        if (instr.upper() == 'QUIT'):
-            self.close()
-            sys.exit()
-        self.cmd_channel.sendall(bytes(cmd + '\n', 'utf-8'))
-
-        received = self.cmd_channel.recv(1024).decode('utf-8')
-        print(f'server: {received}')
-
-    def handle_file_channel(self):
-        pass
-
-    def serve(self):
-        if not self.cmd_channel:
-            print('No cmd_channel availible.')
-            sys.exit()
-        while True:
-            self.handle_cmd_channel()
-            self.handle_file_channel()
-
-    def close(self):
+    def send_cmd(self, cmd):
+        if cmd[-1] != '\n':
+            cmd += '\n'
+        success = False
         if self.cmd_channel:
-            self.cmd_channel.close()
-        if self.file_channel:
-            self.file_channel.close()
+            cmd = cmd.encode('utf-8')
+            self.cmd_channel.sendall(cmd)
+            return True
+        else:
+            print('cmd_channel not available.')
+            return False
+
+    def get_resp(self):
+        resp = self.cmd_channel.recv(1024).decode('utf-8')
+        if not resp:
+            print('Connection closed.')
+        return resp
+
+    def login(self, username, password):
+        '''Merge USER and PASS into one cmd LOGIN.'''
+        cmd = 'LOGIN ' + username + ' ' + password
+        self.send_cmd(cmd)
+        resp = self.get_resp()
+        print(resp)
+
+    def dir(self):
+        cmd = 'LIST'
+        self.send_cmd(cmd)
+        resp = self.get_resp()
+        print(resp)
 
     def initialize_file_channel(self, sockname):
         listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -59,7 +63,14 @@ class MinFTPClient:
         return file_channel
 
 
+    def close(self):
+        if self.cmd_channel:
+            self.cmd_channel.close()
+        if self.file_channel:
+            self.file_channel.close()
+
+
 if __name__ == '__main__':
-    HOST, PORT = '127.0.0.1', 12345
-    client = MinFTPClient((HOST, PORT))
-    client.serve()
+    client = MinFTPClient()
+    client.login('test', 'test')
+    client.dir()
