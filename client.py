@@ -6,19 +6,23 @@ class MinFTPClient:
 
     def __init__(self, server_addr=('127.0.0.1', 1234)):
         self.server_addr = server_addr  # (host, port)
-        self.cmd_channel = self.initialize_cmd_channel()  # Socket for commands
+        self.cmd_channel = self.connect_to_server(server_addr)  # Socket for commands
+        self.get_welcome()
         self.file_channel = None  # Socket for file transfer
+        self.passive = False
 
-    def initialize_cmd_channel(self):
+    def get_welcome(self):
+        welcome = self.get_resp()
+        print(welcome)
+
+    def connect_to_server(self, addr):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.connect(self.server_addr)
-            print(f'cmd_channel to {self.server_addr} established.')
-            welcome = sock.recv(1024)
-            print(welcome)
+            sock.connect(addr)
+            print(f'connection to {addr} established.')
             return sock
         except:
-            print('Exception occured during establishment of cmd_channel.')
+            print(f'Error occurred when connecting to {addr}')
             sys.exit()
 
     def send_cmd(self, cmd):
@@ -51,17 +55,67 @@ class MinFTPClient:
         self.send_cmd(cmd)
         resp = self.get_resp()
         print(resp)
+        return resp.split()
 
-    def initialize_file_channel(self, sockname):
-        listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listen_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listen_socket.bind(sockname)
-        listen_socket.listen()
-        print('listening on file_channel: ', sockname)
-        file_channel, addr = listen_socket.accept()
-        print('File channel established. Server addr: ', addr)
-        return file_channel
+    def set_passive(self, passive):
+        self.passive = passive
 
+    def make_port(self):
+        addr = self.cmd_channel.getsockname()
+        sock = socket.socket()
+        sock.bind(addr)
+        sock.listen(1)
+        # Maximum waiting time: 10s.
+        sock.settimeout(10)
+        cmd = 'PORT ' + addr[0] + ' ' + str(addr[1])
+        self.send_cmd(cmd)
+        return sock
+
+    def initialize_file_channel(self):
+        ''' Establish file_channel according to mode (passive or not).
+            If self.passive is False, then open a listen socket for server
+            to connect. If self.passive is True, then create another socket
+            to connect to server.
+        '''
+        if self.passive:
+            cmd = 'PASV'
+            self.send_cmd(cmd)
+            resp = self.get_resp()
+            port = resp.split()
+            if len(port) != 1:
+                print('Server return illegal port number: ' + repr(port))
+                return False
+            self.file_channel = self.connect_to_server((self.server_addr[0], int(port[0])))
+        else:
+            sock = self.make_port()
+            try:
+                self.file_channel, addr = sock.accept()
+            except:
+                print('Waiting for connection timeout...')
+                return False
+            finally:
+                sock.close()
+
+    def retr(self, filename, openfile):
+        '''Retrieve a file from the server.'''
+        self.initialize_file_channel()
+        if not self.file_channel:
+            print('No available file_channel.')
+            return False
+        cmd = 'RETR ' + filename
+        self.send_cmd(cmd)
+        if openfile:
+            data = self.file_channel.recv(4096)
+            openfile.write(data)
+            while data:
+                data = self.file_channel.recv(4096)
+                openfile.write(data)
+            openfile.close()
+            print('Download file successful.')
+            return True
+        else:
+            print('Illegal fileno.')
+            return False
 
     def close(self):
         if self.cmd_channel:
@@ -73,4 +127,7 @@ class MinFTPClient:
 if __name__ == '__main__':
     client = MinFTPClient()
     client.login('test', 'test')
-    client.dir()
+    client.set_passive(True)
+    resp = client.dir()
+    with open('temp2', 'wb') as f:
+        client.retr(resp[4], f)
