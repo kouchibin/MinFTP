@@ -1,5 +1,6 @@
 import socket
 import sys
+import os
 
 
 class MinFTPClient:
@@ -44,7 +45,7 @@ class MinFTPClient:
         return resp
 
     def login(self, username, password):
-        '''Merge USER and PASS into one cmd LOGIN.'''
+        """Merge USER and PASS into one cmd LOGIN."""
         cmd = 'LOGIN ' + username + ' ' + password
         self.send_cmd(cmd)
         resp = self.get_resp()
@@ -71,12 +72,39 @@ class MinFTPClient:
         self.send_cmd(cmd)
         return sock
 
+    def store(self, filename):
+        """ Store the content of the openfile to remote directory.
+
+        :param openfile: Opening file object.
+        :return: True if success, False otherwise.
+        """
+        if not os.path.exists(filename):
+            print('File does not exist.')
+            return False
+
+        with open(filename) as f:
+            self.initialize_file_channel()
+            if not self.file_channel:
+                print('No available file_channel.')
+                return False
+            cmd = 'STOR ' + filename
+            self.send_cmd(cmd)
+            data = f.read(4096)
+            self.file_channel.sendall(bytes(data, 'utf-8'))
+            while data:
+                data = f.read(4096)
+                self.file_channel.sendall(bytes(data, 'utf-8'))
+        return True
+
+
+
     def initialize_file_channel(self):
-        ''' Establish file_channel according to mode (passive or not).
+        """ Establish file_channel according to mode (passive or not).
+
             If self.passive is False, then open a listen socket for server
             to connect. If self.passive is True, then create another socket
             to connect to server.
-        '''
+        """
         if self.passive:
             cmd = 'PASV'
             self.send_cmd(cmd)
@@ -97,7 +125,7 @@ class MinFTPClient:
                 sock.close()
 
     def retr(self, filename, openfile):
-        '''Retrieve a file from the server.'''
+        """Retrieve a file from the server."""
         self.initialize_file_channel()
         if not self.file_channel:
             print('No available file_channel.')
@@ -129,5 +157,4 @@ if __name__ == '__main__':
     client.login('test', 'test')
     client.set_passive(True)
     resp = client.dir()
-    with open('temp2', 'wb') as f:
-        client.retr(resp[4], f)
+    client.store('client_test.py')

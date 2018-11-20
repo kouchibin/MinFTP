@@ -36,6 +36,8 @@ class CmdHandler(socketserver.StreamRequestHandler):
                 self.send_file(msg[1])
             elif msg[0] == 'PASV':
                 self.setup_passive_channel()
+            elif msg[0] == 'STOR':
+                self.recv_file(msg[1])
         else:
             self.send_resp('Please Login.')
 
@@ -89,6 +91,19 @@ class CmdHandler(socketserver.StreamRequestHandler):
                 while data:
                     data = f.read(4096)
                     self.file_channel.sendall(data)
+            self.file_channel.close()
+            self.file_channel = None
+        else:
+            print('No available file_channel.')
+
+    def recv_file(self, filename):
+        if self.file_channel:
+            with open(filename, 'wb') as f:
+                data = self.file_channel.recv(4096)
+                f.write(data)
+                while data:
+                    data = self.file_channel.recv(4096)
+                    f.write(data)
             self.file_channel.close()
             self.file_channel = None
         else:
